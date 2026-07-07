@@ -15,6 +15,9 @@ CDP = f"http://127.0.0.1:{PORT}"
 INJECT_SCRIPT = ROOT / "figmacn_inject.js"
 LOG_FILE = ROOT / "figma-cn-launcher.log"
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+DETACHED_PROCESS = getattr(subprocess, "DETACHED_PROCESS", 0)
+STARTF_USESHOWWINDOW = getattr(subprocess, "STARTF_USESHOWWINDOW", 1)
+SW_HIDE = 0
 
 sys.path.insert(0, str(ROOT / "pydeps"))
 
@@ -34,11 +37,17 @@ def log(message: str) -> None:
 
 
 def popen_hidden(args: list[str], env: dict[str, str] | None = None) -> subprocess.Popen:
+    startupinfo = None
+    if os.name == "nt":
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = SW_HIDE
     return subprocess.Popen(
         args,
         env=env,
         close_fds=True,
-        creationflags=CREATE_NO_WINDOW,
+        creationflags=CREATE_NO_WINDOW | DETACHED_PROCESS,
+        startupinfo=startupinfo,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         stdin=subprocess.DEVNULL,
@@ -250,12 +259,15 @@ def page_targets() -> list[dict]:
     return [target for target in targets if target.get("type") == "page" and target.get("webSocketDebuggerUrl")]
 
 
-def inject_all(expression: str, scripted_ids: set[str]) -> None:
+def inject_all(expression: str, scripted_ids: set[str]) -> tuple[int, int]:
+    total = 0
+    ready = 0
     for target in page_targets():
         target_id = target.get("id", "")
         ws_url = target.get("webSocketDebuggerUrl")
         if not ws_url:
             continue
+        total += 1
         try:
             if target_id not in scripted_ids:
                 result = send_cdp_command(
@@ -289,8 +301,11 @@ def inject_all(expression: str, scripted_ids: set[str]) -> None:
                         ensure_ascii=False,
                     )
                 )
+            if probe_injected(ws_url):
+                ready += 1
         except Exception as exc:
             log(f"Inject failed for {target.get('url')}: {exc}")
+    return total, ready
 
 
 def main() -> int:
@@ -335,15 +350,25 @@ def main() -> int:
 
     expression = INJECT_SCRIPT.read_text(encoding="utf-8")
     scripted_ids: set[str] = set()
+    stable_ready_cycles = 0
+    stay_attached = os.environ.get("FIGMA_CN_STAY_ATTACHED") == "1"
 
     while True:
         if not figma_running():
             log("Figma exited; launcher exiting")
             return 0
         if cdp_ready():
-            inject_all(expression, scripted_ids)
+            total, ready = inject_all(expression, scripted_ids)
+            if total > 0 and ready == total:
+                stable_ready_cycles += 1
+                if stable_ready_cycles >= 2 and not stay_attached:
+                    log(f"Injection ready for {ready}/{total} targets; launcher exiting")
+                    return 0
+            else:
+                stable_ready_cycles = 0
         else:
             scripted_ids.clear()
+            stable_ready_cycles = 0
         time.sleep(2)
 
 
