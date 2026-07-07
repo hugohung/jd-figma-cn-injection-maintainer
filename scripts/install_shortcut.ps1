@@ -1,7 +1,8 @@
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$startScript = Join-Path $root "start_figma_cn.ps1"
+$launchScript = Join-Path $root "launch_figma_cn.py"
+$python = (Get-Command python.exe -ErrorAction SilentlyContinue).Source
 $desktop = [Environment]::GetFolderPath("Desktop")
 $programs = [Environment]::GetFolderPath("Programs")
 $shortcutPaths = @(
@@ -10,14 +11,18 @@ $shortcutPaths = @(
 )
 $figmaIcon = Join-Path $env:LOCALAPPDATA "Figma\Figma.exe"
 
+if (-not $python) {
+  throw "Python was not found."
+}
+
 foreach ($shortcutPath in $shortcutPaths) {
   $parent = Split-Path -Parent $shortcutPath
   New-Item -ItemType Directory -Force -Path $parent | Out-Null
 
   $shell = New-Object -ComObject WScript.Shell
   $shortcut = $shell.CreateShortcut($shortcutPath)
-  $shortcut.TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-  $shortcut.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startScript`""
+  $shortcut.TargetPath = $python
+  $shortcut.Arguments = "`"$launchScript`""
   $shortcut.WorkingDirectory = $root
   if (Test-Path $figmaIcon) {
     $shortcut.IconLocation = $figmaIcon
