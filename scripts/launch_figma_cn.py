@@ -96,6 +96,17 @@ def figma_running() -> bool:
         return True
 
 
+def stop_figma() -> None:
+    for image_name in ("Figma.exe", "figma_agent.exe"):
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/IM", image_name],
+            capture_output=True,
+            text=True,
+            encoding="mbcs",
+            errors="ignore",
+        )
+
+
 def wait_for_cdp(seconds: int = 25) -> bool:
     deadline = time.time() + seconds
     while time.time() < deadline:
@@ -190,6 +201,12 @@ def main() -> int:
         return 1
 
     if not cdp_ready():
+        if figma_running():
+            log("Existing Figma detected without CDP; restarting it with debugging enabled")
+            stop_figma()
+            deadline = time.time() + 10
+            while figma_running() and time.time() < deadline:
+                time.sleep(0.5)
         start_figma()
         if not wait_for_cdp():
             message_box(
