@@ -23,6 +23,16 @@ def url_json(url: str, timeout: float = 2.0):
         return json.loads(response.read().decode("utf-8"))
 
 
+def tcp_port_open() -> bool:
+    import socket
+
+    try:
+        with socket.create_connection(("127.0.0.1", PORT), timeout=1.0):
+            return True
+    except OSError:
+        return False
+
+
 def tasklist_running() -> bool:
     try:
         result = subprocess.run(
@@ -92,6 +102,7 @@ def main() -> int:
     report: dict = {
         "figma_running": tasklist_running(),
         "cdp_url": CDP,
+        "cdp_socket_open": tcp_port_open(),
         "cdp_ready": False,
         "targets": [],
     }

@@ -46,11 +46,22 @@ def url_json(url: str, timeout: float = 2.0):
         return json.loads(response.read().decode("utf-8"))
 
 
-def cdp_ready() -> bool:
+def tcp_port_open() -> bool:
     try:
-        url_json(f"{CDP}/json/version", timeout=1.0)
+        with socket.create_connection(("127.0.0.1", PORT), timeout=1.0):
+            return True
+    except OSError:
+        return False
+
+
+def cdp_ready() -> bool:
+    if not tcp_port_open():
+        return False
+    try:
+        url_json(f"{CDP}/json/version", timeout=4.0)
         return True
-    except Exception:
+    except Exception as exc:
+        log(f"CDP socket is open, but /json/version is not ready yet: {exc}")
         return False
 
 
@@ -143,40 +154,77 @@ def evaluate(ws_url: str, expression: str) -> dict:
         ws.close()
 
 
+def send_cdp_command(ws_url: str, method: str, params: dict | None = None) -> dict:
+    if websocket is None:
+        raise RuntimeError(f"Missing websocket-client: {WEBSOCKET_IMPORT_ERROR}")
+
+    ws = websocket.create_connection(ws_url, timeout=10)
+    try:
+        payload = {"id": 1, "method": method}
+        if params is not None:
+            payload["params"] = params
+        ws.send(json.dumps(payload))
+        while True:
+            message = json.loads(ws.recv())
+            if message.get("id") == 1:
+                return message
+    finally:
+        ws.close()
+
+
+def probe_injected(ws_url: str) -> bool:
+    result = evaluate(ws_url, "Boolean(window.__codexFigmaCNInjected)")
+    return bool(result.get("result", {}).get("result", {}).get("value"))
+
+
 def page_targets() -> list[dict]:
     try:
-        targets = url_json(f"{CDP}/json/list", timeout=2.0)
+        targets = url_json(f"{CDP}/json/list", timeout=3.0)
     except Exception as exc:
         log(f"Cannot read targets: {exc}")
         return []
-    return [
-        target
-        for target in targets
-        if target.get("type") == "page" and "figma.com" in target.get("url", "")
-    ]
+    return [target for target in targets if target.get("type") == "page" and target.get("webSocketDebuggerUrl")]
 
 
-def inject_all(expression: str, injected_ids: set[str]) -> None:
+def inject_all(expression: str, scripted_ids: set[str]) -> None:
     for target in page_targets():
         target_id = target.get("id", "")
         ws_url = target.get("webSocketDebuggerUrl")
-        if not ws_url or target_id in injected_ids:
+        if not ws_url:
             continue
         try:
-            result = evaluate(ws_url, expression)
-            injected_ids.add(target_id)
-            value = result.get("result", {}).get("result", {}).get("value", {})
-            log(
-                "Injected "
-                + json.dumps(
-                    {
-                        "title": target.get("title"),
-                        "url": target.get("url"),
-                        "result": value,
-                    },
-                    ensure_ascii=False,
+            if target_id not in scripted_ids:
+                result = send_cdp_command(
+                    ws_url,
+                    "Page.addScriptToEvaluateOnNewDocument",
+                    {"source": expression},
                 )
-            )
+                scripted_ids.add(target_id)
+                log(
+                    "Registered init script "
+                    + json.dumps(
+                        {
+                            "title": target.get("title"),
+                            "url": target.get("url"),
+                            "result": result.get("result", {}),
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+            if not probe_injected(ws_url):
+                result = evaluate(ws_url, expression)
+                value = result.get("result", {}).get("result", {}).get("value", {})
+                log(
+                    "Injected "
+                    + json.dumps(
+                        {
+                            "title": target.get("title"),
+                            "url": target.get("url"),
+                            "result": value,
+                        },
+                        ensure_ascii=False,
+                    )
+                )
         except Exception as exc:
             log(f"Inject failed for {target.get('url')}: {exc}")
 
@@ -208,25 +256,27 @@ def main() -> int:
             while figma_running() and time.time() < deadline:
                 time.sleep(0.5)
         start_figma()
-        if not wait_for_cdp():
-            message_box(
-                "Figma started, but the debugging port never opened.\n\n"
-                "If you opened Figma from the stock shortcut, close it fully and "
-                "launch again through the Figma CN shortcut."
+        if not wait_for_cdp(90):
+            log(
+                "Figma has not exposed /json/version yet; keeping launcher alive "
+                "and continuing to retry in the background"
             )
-            return 1
+            message_box(
+                "Figma is still starting and the debugging endpoint has not answered yet.\n\n"
+                "Leave this window open. The launcher will keep retrying in the background."
+            )
 
     expression = INJECT_SCRIPT.read_text(encoding="utf-8")
-    injected_ids: set[str] = set()
+    scripted_ids: set[str] = set()
 
     while True:
         if not figma_running():
             log("Figma exited; launcher exiting")
             return 0
         if cdp_ready():
-            inject_all(expression, injected_ids)
+            inject_all(expression, scripted_ids)
         else:
-            injected_ids.clear()
+            scripted_ids.clear()
         time.sleep(2)
 
 
