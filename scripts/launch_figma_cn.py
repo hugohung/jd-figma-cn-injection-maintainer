@@ -83,6 +83,18 @@ def find_figma_agent_exe() -> Path | None:
     return None
 
 
+def find_stock_figma_shortcut() -> Path | None:
+    desktop = Path(os.environ.get("USERPROFILE", "")) / "Desktop" / "Figma.lnk"
+    if desktop.exists():
+        return desktop
+
+    programs = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Figma.lnk"
+    if programs.exists():
+        return programs
+
+    return None
+
+
 def figma_agent_running() -> bool:
     try:
         result = subprocess.run(
@@ -104,6 +116,15 @@ def start_figma_agent() -> None:
         return
     log("Starting figma_agent.exe from desktop app context")
     subprocess.Popen([str(agent), "--from-desktop-app"], close_fds=True)
+
+
+def start_stock_figma() -> bool:
+    shortcut = find_stock_figma_shortcut()
+    if not shortcut:
+        return False
+    log(f"Starting Figma from stock shortcut: {shortcut}")
+    os.startfile(str(shortcut))
+    return True
 
 
 def start_figma() -> None:
@@ -279,16 +300,19 @@ def main() -> int:
         return 1
 
     if not cdp_ready():
+        was_running = figma_running()
         start_figma_agent()
-        if figma_running():
+        started_from_shortcut = start_stock_figma()
+        if was_running:
             log("Existing Figma detected without CDP; restarting it with debugging enabled")
             stop_figma()
             deadline = time.time() + 10
             while figma_running() and time.time() < deadline:
                 time.sleep(0.5)
-        else:
+        elif not started_from_shortcut:
             time.sleep(1)
-        start_figma()
+        if not started_from_shortcut:
+            start_figma()
         if not wait_for_cdp(90):
             log(
                 "Figma has not exposed /json/version yet; keeping launcher alive "
