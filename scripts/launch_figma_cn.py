@@ -300,10 +300,11 @@ def main() -> int:
         return 1
 
     if not cdp_ready():
-        was_running = figma_running()
         start_figma_agent()
         started_from_shortcut = start_stock_figma()
-        if was_running:
+        if started_from_shortcut:
+            time.sleep(6)
+        if figma_running():
             log("Existing Figma detected without CDP; restarting it with debugging enabled")
             stop_figma()
             deadline = time.time() + 10
@@ -311,16 +312,12 @@ def main() -> int:
                 time.sleep(0.5)
         elif not started_from_shortcut:
             time.sleep(1)
-        if not started_from_shortcut:
+        if not cdp_ready():
             start_figma()
         if not wait_for_cdp(90):
             log(
                 "Figma has not exposed /json/version yet; keeping launcher alive "
                 "and continuing to retry in the background"
-            )
-            message_box(
-                "Figma is still starting and the debugging endpoint has not answered yet.\n\n"
-                "Leave this window open. The launcher will keep retrying in the background."
             )
 
     expression = INJECT_SCRIPT.read_text(encoding="utf-8")
