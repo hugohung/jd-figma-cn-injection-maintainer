@@ -14,6 +14,7 @@ LOCK_PORT = int(os.environ.get("FIGMA_CN_LOCK_PORT", "39233"))
 CDP = f"http://127.0.0.1:{PORT}"
 INJECT_SCRIPT = ROOT / "figmacn_inject.js"
 LOG_FILE = ROOT / "figma-cn-launcher.log"
+CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 sys.path.insert(0, str(ROOT / "pydeps"))
 
@@ -30,6 +31,18 @@ def log(message: str) -> None:
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with LOG_FILE.open("a", encoding="utf-8") as file:
         file.write(f"[{stamp}] {message}\n")
+
+
+def popen_hidden(args: list[str], env: dict[str, str] | None = None) -> subprocess.Popen:
+    return subprocess.Popen(
+        args,
+        env=env,
+        close_fds=True,
+        creationflags=CREATE_NO_WINDOW,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        stdin=subprocess.DEVNULL,
+    )
 
 
 def message_box(text: str) -> None:
@@ -115,7 +128,7 @@ def start_figma_agent() -> None:
     if not agent or figma_agent_running():
         return
     log("Starting figma_agent.exe from desktop app context")
-    subprocess.Popen([str(agent), "--from-desktop-app"], close_fds=True)
+    popen_hidden([str(agent), "--from-desktop-app"])
 
 
 def start_stock_figma() -> bool:
@@ -140,7 +153,7 @@ def start_figma() -> None:
         "--remote-allow-origins=*",
     ]
     log("Starting Figma with debugging enabled")
-    subprocess.Popen(args, env=env, close_fds=True)
+    popen_hidden(args, env=env)
 
 
 def figma_running() -> bool:
