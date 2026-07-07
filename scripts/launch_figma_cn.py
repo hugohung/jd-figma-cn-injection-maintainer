@@ -76,6 +76,36 @@ def find_figma_exe() -> Path | None:
     return None
 
 
+def find_figma_agent_exe() -> Path | None:
+    agent = Path(os.environ.get("LOCALAPPDATA", "")) / "FigmaAgent" / "figma_agent.exe"
+    if agent.exists():
+        return agent
+    return None
+
+
+def figma_agent_running() -> bool:
+    try:
+        result = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq figma_agent.exe"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            encoding="mbcs",
+            errors="ignore",
+        )
+        return "figma_agent.exe" in result.stdout
+    except Exception:
+        return True
+
+
+def start_figma_agent() -> None:
+    agent = find_figma_agent_exe()
+    if not agent or figma_agent_running():
+        return
+    log("Starting figma_agent.exe from desktop app context")
+    subprocess.Popen([str(agent), "--from-desktop-app"], close_fds=True)
+
+
 def start_figma() -> None:
     exe = find_figma_exe()
     if not exe:
@@ -249,12 +279,15 @@ def main() -> int:
         return 1
 
     if not cdp_ready():
+        start_figma_agent()
         if figma_running():
             log("Existing Figma detected without CDP; restarting it with debugging enabled")
             stop_figma()
             deadline = time.time() + 10
             while figma_running() and time.time() < deadline:
                 time.sleep(0.5)
+        else:
+            time.sleep(1)
         start_figma()
         if not wait_for_cdp(90):
             log(
