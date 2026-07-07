@@ -63,6 +63,54 @@ def message_box(text: str) -> None:
         log(text)
 
 
+def bring_figma_to_front() -> bool:
+    if os.name != "nt":
+        return False
+
+    try:
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        hwnds: list[int] = []
+
+        def enum_window(hwnd, _):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                return True
+            buffer = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buffer, length + 1)
+            title = buffer.value
+            if "Figma" in title:
+                hwnds.append(hwnd)
+            return True
+
+        enum_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)(enum_window)
+        user32.EnumWindows(enum_proc, 0)
+        if not hwnds:
+            log("No visible Figma window found to activate")
+            return False
+
+        hwnd = hwnds[0]
+        user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+        log("Activated Figma window")
+        return True
+    except Exception as exc:
+        log(f"Could not activate Figma window: {exc}")
+        return False
+
+
+def reveal_figma_window() -> None:
+    if bring_figma_to_front():
+        return
+    if start_stock_figma():
+        time.sleep(3)
+        bring_figma_to_front()
+
+
 def url_json(url: str, timeout: float = 2.0):
     with urllib.request.urlopen(url, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
@@ -362,6 +410,7 @@ def main() -> int:
             if total > 0 and ready == total:
                 stable_ready_cycles += 1
                 if stable_ready_cycles >= 2 and not stay_attached:
+                    reveal_figma_window()
                     log(f"Injection ready for {ready}/{total} targets; launcher exiting")
                     return 0
             else:
