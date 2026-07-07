@@ -1,26 +1,26 @@
 # Figma CN Injection Maintainer
 
-> Maintain the Figma desktop Chinese UI injector.
+> Figma 桌面端中文界面维护器。
 
-## What it does
+## 功能
 
-- Relaunches the Chinese Figma helper with the right debugging flags.
-- Rebuilds the injector from the bundled figmaCN source files.
-- Diagnoses when a Figma update changes the page structure or breaks translation.
-- Recreates shortcuts for the launcher.
+- 以正确的调试参数重新启动 Figma 中文辅助器。
+- 基于内置的 figmaCN 源文件重建注入脚本。
+- 在 Figma 更新后诊断页面结构变化或翻译失效问题。
+- 重新生成启动快捷方式。
 
-## Install
+## 安装
 
-Clone this repository into your Codex skills directory:
+把这个仓库克隆到你的 Codex skills 目录中：
 
 ```bash
 git clone https://github.com/hugohung/jd-figma-cn-injection-maintainer.git ~/.codex/skills/figma-cn-injection-maintainer
 ```
 
-## Use
+## 使用
 
-Ask Codex to use `$figma-cn-injection-maintainer` when you want to repair, relaunch, diagnose, or refresh the Figma Chinese UI injector.
+当你想修复、重启、诊断或刷新 Figma 中文界面注入器时，直接让 Codex 使用 `$figma-cn-injection-maintainer`。
 
-## License
+## 许可证
 
 MIT
