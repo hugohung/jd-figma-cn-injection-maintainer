@@ -1,0 +1,4 @@
+interface:
+  display_name: "Figma CN Injection Maintainer"
+  short_description: "Repair and relaunch the Figma Chinese UI injector."
+  default_prompt: "Use $figma-cn-injection-maintainer to repair, relaunch, or diagnose the Figma Chinese UI injector."
